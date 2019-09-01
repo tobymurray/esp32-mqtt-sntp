@@ -179,13 +179,13 @@ static void mqtt_app_start(void)
 
 void print_elapsed_time(time_t now, time_t first_time, struct tm timeinfo)
 {
-  char duration[32];
-
   time_t elapsed_time = now - first_time;
 
   int hours_elapsed = elapsed_time / 3600;
   int minutes_elapsed = (elapsed_time % 3600) / 60;
   int seconds_elapsed = elapsed_time % 60;
+
+  char duration[32];
   snprintf(duration, sizeof(duration), "%02i:%02i:%02i", hours_elapsed, minutes_elapsed, seconds_elapsed);
 
   ESP_LOGI(TAG, "The total elapsed time so far is %s", duration);
@@ -194,21 +194,22 @@ void print_elapsed_time(time_t now, time_t first_time, struct tm timeinfo)
 
 void vTaskPublishTime(void *pvParameters)
 {
+  TickType_t xLastWakeTime;
+  /* Block for 500ms. */
+  const TickType_t xDelay = 60000 / portTICK_PERIOD_MS;
+
+  // Initialise the xLastWakeTime variable with the current time.
+  xLastWakeTime = xTaskGetTickCount();
+
   time_t first_time = 0;
   time_t now;
   struct tm timeinfo;
-  unsigned long currentMillis;
-  unsigned long lastReport = 0;
 
   while (1)
   {
-    currentMillis = millis();
-    if (currentMillis - lastReport <= 60 * 1000)
-    {
-      // Not time yet!
-      continue;
-    }
-    lastReport = currentMillis;
+    // Wait for the next cycle.
+    vTaskDelayUntil(&xLastWakeTime, xDelay);
+
     time(&now);
     localtime_r(&now, &timeinfo);
     // Is time set? If not, tm_year will be (1970 - 1900).
@@ -316,9 +317,4 @@ static void initialize_sntp(void)
   sntp_setservername(0, "pool.ntp.org");
   sntp_set_time_sync_notification_cb(time_sync_notification_cb);
   sntp_init();
-}
-
-unsigned long IRAM_ATTR millis()
-{
-  return (unsigned long)(esp_timer_get_time() / 1000ULL);
 }
