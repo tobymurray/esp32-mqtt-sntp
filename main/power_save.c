@@ -3,7 +3,6 @@
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_sleep.h"
-#include "esp_sntp.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 
@@ -28,6 +27,8 @@
 #include <sys/time.h>
 #include <time.h>
 
+#include "sntp_helper.h"
+
 /*set the ssid and password via "idf.py menuconfig"*/
 #define DEFAULT_SSID CONFIG_EXAMPLE_WIFI_SSID
 #define DEFAULT_PWD CONFIG_EXAMPLE_WIFI_PASSWORD
@@ -44,6 +45,8 @@
 #define DEFAULT_PS_MODE WIFI_PS_NONE
 #endif /*CONFIG_POWER_SAVE_MODEM*/
 
+enum mqtt_qos { AT_MOST_ONCE, AT_LEAST_ONCE, EXACTLY_ONCE };
+
 /**
  * Variable holding number of times ESP32 restarted since first boot.
  * It is placed into RTC memory using RTC_DATA_ATTR and
@@ -51,16 +54,8 @@
  */
 RTC_DATA_ATTR static int boot_count = 0;
 
-static void obtain_time(void);
-static void initialize_sntp(void);
-
 static const char *TAG = "power_save";
 static esp_mqtt_client_handle_t client;
-
-void time_sync_notification_cb(struct timeval *tv)
-{
-  ESP_LOGI(TAG, "Notification of a time synchronization event");
-}
 
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data)
@@ -111,27 +106,22 @@ static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
 {
   esp_mqtt_client_handle_t client = event->client;
   int msg_id;
-  // your_context_t *context = event->context;
+  uint8_t mac[6];
+  char mac_as_text[18];
+
   switch (event->event_id)
   {
   case MQTT_EVENT_CONNECTED:
+    ESP_ERROR_CHECK(esp_efuse_mac_get_default(mac));
+    sprintf(mac_as_text, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-    msg_id = esp_mqtt_client_publish(client, "/topic/qos1", "data_3", 0, 1, 0);
+    msg_id = esp_mqtt_client_publish(client, "/announce", mac_as_text, 0, EXACTLY_ONCE, 0);
     ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
-
-    msg_id = esp_mqtt_client_subscribe(client, "/topic/qos0", 0);
-    ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
-
-    msg_id = esp_mqtt_client_subscribe(client, "/topic/qos1", 1);
-    ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
-
-    msg_id = esp_mqtt_client_unsubscribe(client, "/topic/qos1");
-    ESP_LOGI(TAG, "sent unsubscribe successful, msg_id=%d", msg_id);
     break;
   case MQTT_EVENT_DISCONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
     break;
-
   case MQTT_EVENT_SUBSCRIBED:
     ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
     msg_id = esp_mqtt_client_publish(client, "/topic/qos0", "data", 0, 0, 0);
@@ -289,32 +279,4 @@ void app_main(void)
   mqtt_app_start();
 
   xTaskCreate(vTaskPublishTime, "PUBLISH_TIME", 3072, NULL, 1, NULL);
-}
-
-static void obtain_time(void)
-{
-  initialize_sntp();
-
-  // wait for time to be set
-  time_t now = 0;
-  struct tm timeinfo = {
-      0};
-  int retry = 0;
-  const int retry_count = 10;
-  while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < retry_count)
-  {
-    ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-  }
-  time(&now);
-  localtime_r(&now, &timeinfo);
-}
-
-static void initialize_sntp(void)
-{
-  ESP_LOGI(TAG, "Initializing SNTP");
-  sntp_setoperatingmode(SNTP_OPMODE_POLL);
-  sntp_setservername(0, "pool.ntp.org");
-  sntp_set_time_sync_notification_cb(time_sync_notification_cb);
-  sntp_init();
 }
