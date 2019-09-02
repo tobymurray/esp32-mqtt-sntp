@@ -8,8 +8,8 @@
 #include "esp_system.h"
 #include "esp_wifi.h"
 
-#include "freertos/event_groups.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -18,9 +18,9 @@
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
 
-#include "sdkconfig.h"
 #include "mqtt_client.h"
 #include "nvs_flash.h"
+#include "sdkconfig.h"
 #include "tcpip_adapter.h"
 
 #include <stddef.h>
@@ -55,11 +55,12 @@
 #define DATA_LENGTH 512                  /*!< Data buffer length of test buffer */
 #define DELAY_TIME_BETWEEN_ITEMS_MS 1000 /*!< delay time between different test items */
 
-#define I2C_SLAVE_SCL_IO CONFIG_I2C_SLAVE_SCL               /*!< gpio number for i2c slave clock */
-#define I2C_SLAVE_SDA_IO CONFIG_I2C_SLAVE_SDA               /*!< gpio number for i2c slave data */
-#define I2C_SLAVE_NUM I2C_NUMBER(CONFIG_I2C_SLAVE_PORT_NUM) /*!< I2C port number for slave dev */
-#define I2C_SLAVE_TX_BUF_LEN (2 * DATA_LENGTH)              /*!< I2C slave tx buffer size */
-#define I2C_SLAVE_RX_BUF_LEN (2 * DATA_LENGTH)              /*!< I2C slave rx buffer size */
+#define I2C_SLAVE_SCL_IO CONFIG_I2C_SLAVE_SCL /*!< gpio number for i2c slave clock */
+#define I2C_SLAVE_SDA_IO CONFIG_I2C_SLAVE_SDA /*!< gpio number for i2c slave data */
+#define I2C_SLAVE_NUM I2C_NUMBER(CONFIG_I2C_SLAVE_PORT_NUM) /*!< I2C port number for slave dev \
+                                                */
+#define I2C_SLAVE_TX_BUF_LEN (2 * DATA_LENGTH) /*!< I2C slave tx buffer size */
+#define I2C_SLAVE_RX_BUF_LEN (2 * DATA_LENGTH) /*!< I2C slave rx buffer size */
 
 #define I2C_MASTER_SCL_IO CONFIG_I2C_MASTER_SCL               /*!< gpio number for I2C master clock */
 #define I2C_MASTER_SDA_IO CONFIG_I2C_MASTER_SDA               /*!< gpio number for I2C master data  */
@@ -81,12 +82,7 @@
 #define ACK_VALUE 0x0                           /*!< I2C ack value */
 #define NACK_VALUE 0x1                          /*!< I2C nack value */
 
-enum mqtt_qos
-{
-  AT_MOST_ONCE,
-  AT_LEAST_ONCE,
-  EXACTLY_ONCE
-};
+enum mqtt_qos { AT_MOST_ONCE, AT_LEAST_ONCE, EXACTLY_ONCE };
 
 /**
  * Variable holding number of times ESP32 restarted since first boot.
@@ -103,33 +99,25 @@ static EventGroupHandle_t wifi_event_group;
 
 SemaphoreHandle_t print_mux = NULL;
 
-static float convert_temperature_reading_to_temperature(uint8_t *data_h, uint8_t *data_l)
-{
+static float convert_temperature_reading_to_temperature(uint8_t *data_h, uint8_t *data_l) {
   //	First Check flag bits
-  if ((*data_h & 0x80) == 0x80)
-  { //TA ³ TCRIT
+  if ((*data_h & 0x80) == 0x80) {  // TA ³ TCRIT
   }
-  if ((*data_h & 0x40) == 0x40)
-  { //TA > TUPPER
+  if ((*data_h & 0x40) == 0x40) {  // TA > TUPPER
   }
-  if ((*data_h & 0x20) == 0x20)
-  { //TA < TLOWER
+  if ((*data_h & 0x20) == 0x20) {  // TA < TLOWER
   }
-  *data_h = *data_h & 0x1F; //Clear flag bits
-  if ((*data_h & 0x10) == 0x10)
-  {                           // Is the temperature lower than 0°C
-    *data_h = *data_h & 0x0F; // Clear SIGN
+  *data_h = *data_h & 0x1F;        // Clear flag bits
+  if ((*data_h & 0x10) == 0x10) {  // Is the temperature lower than 0°C
+    *data_h = *data_h & 0x0F;      // Clear SIGN
     return 256 - (*data_h * 16 + *data_l / 16);
-  }
-  else
-  {
+  } else {
     return *data_h * 16.0 + *data_l / 16.0;
   }
 }
 
 static esp_err_t read_temperature_sensor(int sensor_address, i2c_port_t i2c_num, uint8_t *data_h, uint8_t *data_l,
-                                         float *temperature)
-{
+                                         float *temperature) {
   i2c_cmd_handle_t command = i2c_cmd_link_create();
   i2c_master_start(command);
   i2c_master_write_byte(command, sensor_address << 1 & 0xFE, ACK_CHECK_ENABLE);
@@ -138,8 +126,7 @@ static esp_err_t read_temperature_sensor(int sensor_address, i2c_port_t i2c_num,
   int return_value = i2c_master_cmd_begin(i2c_num, command, 1000 / portTICK_RATE_MS);
   i2c_cmd_link_delete(command);
   // ESP_LOGI(TAG, "First return value is %d", ret);
-  if (return_value != ESP_OK)
-  {
+  if (return_value != ESP_OK) {
     return return_value;
   }
 
@@ -162,8 +149,7 @@ static esp_err_t read_temperature_sensor(int sensor_address, i2c_port_t i2c_num,
 /**
  * @brief i2c master initialization
  */
-static esp_err_t i2c_master_init()
-{
+static esp_err_t i2c_master_init() {
   int i2c_master_port = I2C_MASTER_NUM;
   i2c_config_t conf;
   conf.mode = I2C_MODE_MASTER;
@@ -173,26 +159,19 @@ static esp_err_t i2c_master_init()
   conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
   conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
   i2c_param_config(i2c_master_port, &conf);
-  return i2c_driver_install(i2c_master_port, conf.mode,
-                            I2C_MASTER_RX_BUF_DISABLE,
-                            I2C_MASTER_TX_BUF_DISABLE, 0);
+  return i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
 }
 
-static float read_sensor(int address, uint8_t *data_h, uint8_t *data_l)
-{
+static float read_sensor(int address, uint8_t *data_h, uint8_t *data_l) {
   float temperature;
   int ret = read_temperature_sensor(address, I2C_MASTER_NUM, data_h, data_l, &temperature);
   xSemaphoreTake(print_mux, portMAX_DELAY);
-  if (ret == ESP_ERR_TIMEOUT)
-  {
+  if (ret == ESP_ERR_TIMEOUT) {
     ESP_LOGE(TAG, "I2C Timeout");
-  }
-  else if (ret == ESP_OK)
-  {
-    printf("MCP9808 @ %d: temperature: %.2f\n", address, convert_temperature_reading_to_temperature(data_h, data_l));
-  }
-  else
-  {
+  } else if (ret == ESP_OK) {
+    ESP_LOGI(TAG, "MCP9808 @ %d: temperature: %.2f\n", address,
+             convert_temperature_reading_to_temperature(data_h, data_l));
+  } else {
     ESP_LOGW(TAG, "%s: No ack, sensor not connected...skip...", esp_err_to_name(ret));
   }
   xSemaphoreGive(print_mux);
@@ -201,32 +180,25 @@ static float read_sensor(int address, uint8_t *data_h, uint8_t *data_l)
   return temperature;
 }
 
-static float min_value(float values[])
-{
+static float min_value(float values[]) {
   float minimum = values[0];
-  for (int i = 1; i < 4; i++)
-  {
-    if (values[i] < minimum)
-    {
+  for (int i = 1; i < 4; i++) {
+    if (values[i] < minimum) {
       minimum = values[i];
     }
   }
   return minimum;
 }
 
-static float max_value(float values[])
-{
+static float max_value(float values[]) {
   float maximum = values[0];
-  for (int i = 1; i < 4; i++)
-  {
-    if (values[i] > maximum)
-      maximum = values[i];
+  for (int i = 1; i < 4; i++) {
+    if (values[i] > maximum) maximum = values[i];
   }
   return maximum;
 }
 
-static void read_all_sensors(void *arg)
-{
+static void read_all_sensors(void *arg) {
   uint32_t task_idx = (uint32_t)arg;
   uint8_t sensor_data_h, sensor_data_l;
   int cnt = 0;
@@ -237,8 +209,7 @@ static void read_all_sensors(void *arg)
   TickType_t xLastWakeTime = xTaskGetTickCount();
   const TickType_t xDelay = 15000 / portTICK_PERIOD_MS;
 
-  while (1)
-  {
+  while (1) {
     // Wait for the next cycle.
     vTaskDelayUntil(&xLastWakeTime, xDelay);
 
@@ -288,62 +259,58 @@ static void read_all_sensors(void *arg)
   vTaskDelete(NULL);
 }
 
-static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
-{
+static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event) {
   esp_mqtt_client_handle_t client = event->client;
   int msg_id;
   uint8_t mac[6];
   char mac_as_text[18];
 
-  switch (event->event_id)
-  {
-  case MQTT_EVENT_CONNECTED:
-    ESP_ERROR_CHECK(esp_efuse_mac_get_default(mac));
-    sprintf(mac_as_text, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  switch (event->event_id) {
+    case MQTT_EVENT_CONNECTED:
+      ESP_ERROR_CHECK(esp_efuse_mac_get_default(mac));
+      sprintf(mac_as_text, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
-    ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-    msg_id = esp_mqtt_client_publish(client, "/announce", mac_as_text, 0, EXACTLY_ONCE, 0);
-    ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
-    break;
-  case MQTT_EVENT_DISCONNECTED:
-    ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-    break;
-  case MQTT_EVENT_SUBSCRIBED:
-    ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-    msg_id = esp_mqtt_client_publish(client, "/topic/qos0", "data", 0, 0, 0);
-    ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
-    break;
-  case MQTT_EVENT_UNSUBSCRIBED:
-    ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
-    break;
-  case MQTT_EVENT_PUBLISHED:
-    ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
-    break;
-  case MQTT_EVENT_DATA:
-    ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-    printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-    printf("DATA=%.*s\r\n", event->data_len, event->data);
-    break;
-  case MQTT_EVENT_ERROR:
-    ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
-    break;
-  default:
-    ESP_LOGI(TAG, "Other event id:%d", event->event_id);
-    printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-    printf("DATA=%.*s\r\n", event->data_len, event->data);
-    break;
+      ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+      msg_id = esp_mqtt_client_publish(client, "/announce", mac_as_text, 0, EXACTLY_ONCE, 0);
+      ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
+      break;
+    case MQTT_EVENT_DISCONNECTED:
+      ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+      break;
+    case MQTT_EVENT_SUBSCRIBED:
+      ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+      msg_id = esp_mqtt_client_publish(client, "/topic/qos0", "data", 0, 0, 0);
+      ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
+      break;
+    case MQTT_EVENT_UNSUBSCRIBED:
+      ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+      break;
+    case MQTT_EVENT_PUBLISHED:
+      ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+      break;
+    case MQTT_EVENT_DATA:
+      ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+      printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
+      printf("DATA=%.*s\r\n", event->data_len, event->data);
+      break;
+    case MQTT_EVENT_ERROR:
+      ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
+      break;
+    default:
+      ESP_LOGI(TAG, "Other event id:%d", event->event_id);
+      printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
+      printf("DATA=%.*s\r\n", event->data_len, event->data);
+      break;
   }
   return ESP_OK;
 }
 
-static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
-{
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
   ESP_LOGD(TAG, "Event dispatched from event loop base=%s, event_id=%d", base, event_id);
   mqtt_event_handler_cb(event_data);
 }
 
-static void mqtt_app_start(void)
-{
+static void mqtt_app_start(void) {
   esp_mqtt_client_config_t mqtt_cfg = {
       .uri = CONFIG_BROKER_URL,
   };
@@ -353,19 +320,12 @@ static void mqtt_app_start(void)
   esp_mqtt_client_start(client);
 }
 
-static void event_handler(void *arg, esp_event_base_t event_base,
-                          int32_t event_id, void *event_data)
-{
-  if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
-  {
+static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+  if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
     esp_wifi_connect();
-  }
-  else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
-  {
+  } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
     esp_wifi_connect();
-  }
-  else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
-  {
+  } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "got ip: %s", ip4addr_ntoa(&event->ip_info.ip));
     xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
@@ -374,8 +334,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
 }
 
 /*init wifi as sta and set power save mode*/
-static void wifi_power_save(void)
-{
+static void wifi_power_save(void) {
   wifi_event_group = xEventGroupCreate();
   tcpip_adapter_init();
   ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -387,11 +346,12 @@ static void wifi_power_save(void)
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL));
 
   wifi_config_t wifi_config = {
-      .sta = {
-          .ssid = DEFAULT_SSID,
-          .password = DEFAULT_PWD,
-          .listen_interval = DEFAULT_LISTEN_INTERVAL,
-      },
+      .sta =
+          {
+              .ssid = DEFAULT_SSID,
+              .password = DEFAULT_PWD,
+              .listen_interval = DEFAULT_LISTEN_INTERVAL,
+          },
   };
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
@@ -404,8 +364,7 @@ static void wifi_power_save(void)
   esp_wifi_set_ps(DEFAULT_PS_MODE);
 }
 
-void print_elapsed_time(time_t now, time_t first_time, struct tm timeinfo)
-{
+void print_elapsed_time(time_t now, time_t first_time, struct tm timeinfo) {
   time_t elapsed_time = now - first_time;
 
   int hours_elapsed = elapsed_time / 3600;
@@ -419,8 +378,7 @@ void print_elapsed_time(time_t now, time_t first_time, struct tm timeinfo)
   esp_mqtt_client_publish(client, "/topic/time", duration, 0, 1, 0);
 }
 
-void vTaskPublishTime(void *pvParameters)
-{
+void vTaskPublishTime(void *pvParameters) {
   TickType_t xLastWakeTime;
   /* Block for 500ms. */
   const TickType_t xDelay = 60000 / portTICK_PERIOD_MS;
@@ -432,16 +390,14 @@ void vTaskPublishTime(void *pvParameters)
   time_t now;
   struct tm timeinfo;
 
-  while (1)
-  {
+  while (1) {
     // Wait for the next cycle.
     vTaskDelayUntil(&xLastWakeTime, xDelay);
 
     time(&now);
     localtime_r(&now, &timeinfo);
     // Is time set? If not, tm_year will be (1970 - 1900).
-    if (timeinfo.tm_year < (2016 - 1900))
-    {
+    if (timeinfo.tm_year < (2016 - 1900)) {
       ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
       obtain_time();
       // update 'now' variable with current time
@@ -453,8 +409,7 @@ void vTaskPublishTime(void *pvParameters)
     setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
     tzset();
 
-    if (first_time == 0)
-    {
+    if (first_time == 0) {
       ESP_LOGI(TAG, "This is the first point the time is known, saving it");
       time(&first_time);
 
@@ -473,8 +428,7 @@ void vTaskPublishTime(void *pvParameters)
   }
 }
 
-void app_main(void)
-{
+void app_main(void) {
   ++boot_count;
   ESP_LOGI(TAG, "Boot count: %d", boot_count);
   ESP_LOGI(TAG, "[APP] Startup..");
@@ -483,8 +437,7 @@ void app_main(void)
 
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-  {
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     ESP_ERROR_CHECK(nvs_flash_erase());
     ret = nvs_flash_init();
   }
@@ -502,7 +455,7 @@ void app_main(void)
 #endif
   };
   ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
-#endif // CONFIG_PM_ENABLE
+#endif  // CONFIG_PM_ENABLE
 
   esp_log_level_set("*", ESP_LOG_INFO);
   esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
