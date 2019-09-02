@@ -99,8 +99,74 @@ menu "Example Configuration"
         help
             URL of the broker to connect to
 
-    config BROKER_URL_FROM_STDIN
-        bool
-        default y if BROKER_URL = "FROM_STDIN"
+    menu "I2C Master"
+        config I2C_MASTER_SCL
+            int "SCL GPIO Num"
+            default 19
+            help
+                GPIO number for I2C Master clock line.
+
+        config I2C_MASTER_SDA
+            int "SDA GPIO Num"
+            default 18
+            help
+                GPIO number for I2C Master data line.
+
+        config I2C_MASTER_PORT_NUM
+            int "Port Number"
+            default 1
+            help
+                Port number for I2C Master device.
+
+        config I2C_MASTER_FREQUENCY
+            int "Master Frequency"
+            default 100000
+            help
+                I2C Speed of Master device.
+    endmenu
+
+    menu "I2C Slave"
+        config I2C_SLAVE_SCL
+            int "SCL GPIO Num"
+            default 26
+            help
+                GPIO number for I2C Slave clock line.
+
+        config I2C_SLAVE_SDA
+            int "SDA GPIO Num"
+            default 25
+            help
+                GPIO number for I2C Slave data line.
+
+        config I2C_SLAVE_PORT_NUM
+            int "Port Number"
+            default 0
+            help
+                Port number for I2C Slave device.
+
+        config I2C_SLAVE_ADDRESS
+            hex "ESP Slave Address"
+            default 0x28
+            help
+                Hardware Address of I2C Slave Port.
+    endmenu
+
+    menu "MCP9808 Sensor"
+        config MCP9808_0_ADDRESS
+            hex "Sensor 0 Address"
+            default 0x18
+
+        config MCP9808_1_ADDRESS
+            hex "Sensor 1 Address"
+            default 0x19
+
+        config MCP9808_2_ADDRESS
+            hex "Sensor 2 Address"
+            default 0x1A
+
+        config MCP9808_3_ADDRESS
+            hex "Sensor 3 Address"
+            default 0x1B
+    endmenu
 
 endmenu
