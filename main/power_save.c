@@ -94,6 +94,7 @@ RTC_DATA_ATTR static int boot_count = 0;
 static const char *TAG = "power_save";
 static esp_mqtt_client_handle_t client;
 const static int CONNECTED_BIT = BIT0;
+const int DISCONNECTED_BIT = BIT1;
 
 static EventGroupHandle_t wifi_event_group;
 
@@ -199,9 +200,8 @@ static float max_value(float values[]) {
 }
 
 static void read_all_sensors(void *arg) {
-  uint32_t task_idx = (uint32_t)arg;
   uint8_t sensor_data_h, sensor_data_l;
-  int cnt = 0;
+  int count = 0;
   float temp[4];
   char temperature_buffer[32];
 
@@ -213,7 +213,7 @@ static void read_all_sensors(void *arg) {
     // Wait for the next cycle.
     vTaskDelayUntil(&xLastWakeTime, xDelay);
 
-    ESP_LOGI(TAG, "TASK[%d] test cnt: %d", task_idx, cnt++);
+    ESP_LOGI(TAG, "Number of sensor read loops: %d", count++);
     // Read first sensor
     temp[0] = read_sensor(MCP9808_SENSOR_0_ADDRESS, &sensor_data_h, &sensor_data_l);
     temp[1] = read_sensor(MCP9808_SENSOR_1_ADDRESS, &sensor_data_h, &sensor_data_l);
@@ -229,31 +229,29 @@ static void read_all_sensors(void *arg) {
     if ((bits & CONNECTED_BIT) == 0) {
       ESP_LOGE(TAG, "Wi-Fi is not connected, not publishing temperatures");
     } else {
-      sprintf(temperature_buffer, "%.2f", temp[0]);
-      esp_mqtt_client_publish(client, "/temperature/0/", temperature_buffer, 0, 1, 0);
+      // sprintf(temperature_buffer, "%.2f", temp[0]);
+      // esp_mqtt_client_publish(client, "/temperature/0/", temperature_buffer, 0, 1, 0);
 
-      sprintf(temperature_buffer, "%.2f", temp[1]);
-      esp_mqtt_client_publish(client, "/temperature/1/", temperature_buffer, 0, 1, 0);
+      // sprintf(temperature_buffer, "%.2f", temp[1]);
+      // esp_mqtt_client_publish(client, "/temperature/1/", temperature_buffer, 0, 1, 0);
 
-      sprintf(temperature_buffer, "%.2f", temp[2]);
-      esp_mqtt_client_publish(client, "/temperature/2/", temperature_buffer, 0, 1, 0);
+      // sprintf(temperature_buffer, "%.2f", temp[2]);
+      // esp_mqtt_client_publish(client, "/temperature/2/", temperature_buffer, 0, 1, 0);
 
-      sprintf(temperature_buffer, "%.2f", temp[3]);
-      esp_mqtt_client_publish(client, "/temperature/3/", temperature_buffer, 0, 1, 0);
+      // sprintf(temperature_buffer, "%.2f", temp[3]);
+      // esp_mqtt_client_publish(client, "/temperature/3/", temperature_buffer, 0, 1, 0);
 
-      sprintf(temperature_buffer, "%.2f", min);
-      esp_mqtt_client_publish(client, "/temperature/min/", temperature_buffer, 0, 1, 0);
+      // sprintf(temperature_buffer, "%.2f", min);
+      // esp_mqtt_client_publish(client, "/temperature/min/", temperature_buffer, 0, 1, 0);
 
-      sprintf(temperature_buffer, "%.2f", max);
-      esp_mqtt_client_publish(client, "/temperature/max/", temperature_buffer, 0, 1, 0);
+      // sprintf(temperature_buffer, "%.2f", max);
+      // esp_mqtt_client_publish(client, "/temperature/max/", temperature_buffer, 0, 1, 0);
 
-      sprintf(temperature_buffer, "%.2f", variance);
-      esp_mqtt_client_publish(client, "/temperature/variance/", temperature_buffer, 0, 1, 0);
+      // sprintf(temperature_buffer, "%.2f", variance);
+      // esp_mqtt_client_publish(client, "/temperature/variance/", temperature_buffer, 0, 1, 0);
     }
 
     memset(temp, 0, sizeof temp);
-
-    printf("\n");
   }
   vSemaphoreDelete(print_mux);
   vTaskDelete(NULL);
@@ -317,33 +315,54 @@ static void mqtt_app_start(void) {
 
   client = esp_mqtt_client_init(&mqtt_cfg);
   esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, client);
-  esp_mqtt_client_start(client);
+
+  EventBits_t bits = xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+	if ((bits & CONNECTED_BIT) == 0) {
+		ESP_LOGE(TAG, "Wi-Fi is not connected, failed to initialize MQTT connection");
+	} else {
+    ESP_LOGI(TAG, "Starting MQTT client");
+    esp_mqtt_client_start(client);
+	}
 }
 
-static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+    xEventGroupSetBits(wifi_event_group, DISCONNECTED_BIT);
     esp_wifi_connect();
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "got ip: %s", ip4addr_ntoa(&event->ip_info.ip));
     xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+  }
+}
+
+static void on_got_ip_address(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+  if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     mqtt_app_start();
+  } else {
+    ESP_LOGE(TAG, "Received unexpected event in on_got_ip_address: %s", event_base);
   }
 }
 
 /*init wifi as sta and set power save mode*/
 static void wifi_power_save(void) {
   wifi_event_group = xEventGroupCreate();
+  xEventGroupSetBits(wifi_event_group, DISCONNECTED_BIT);
+
   tcpip_adapter_init();
   ESP_ERROR_CHECK(esp_event_loop_create_default());
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-  ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL));
-  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL));
+    // Set up listeners for Wi-Fi events, this tries to re-connect after disconnection
+  ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
+  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
+  
+  // Set up listener to launch when IP is obtained
+  ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &on_got_ip_address, NULL));
 
   wifi_config_t wifi_config = {
       .sta =
@@ -357,10 +376,6 @@ static void wifi_power_save(void) {
   ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
 
-  ESP_LOGI(TAG, "Waiting for wifi");
-  xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
-
-  ESP_LOGI(TAG, "esp_wifi_set_ps().");
   esp_wifi_set_ps(DEFAULT_PS_MODE);
 }
 
@@ -378,57 +393,74 @@ void print_elapsed_time(time_t now, time_t first_time, struct tm timeinfo) {
   esp_mqtt_client_publish(client, "/topic/time", duration, 0, 1, 0);
 }
 
+void sync_time_via_sntp() {
+  time_t first_time = 0;
+  time_t now;
+  struct tm timeinfo;
+
+  time(&now);
+  localtime_r(&now, &timeinfo);
+  // Is time set? If not, tm_year will be (1970 - 1900).
+  if (timeinfo.tm_year < (2016 - 1900)) {
+    ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
+    obtain_time();
+    // update 'now' variable with current time
+    time(&now);
+  }
+
+  char strftime_buf[64];
+  // Set timezone to Eastern Standard Time and print local time
+  setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
+  tzset();
+
+  if (first_time == 0) {
+    ESP_LOGI(TAG, "This is the first point the time is known, saving it");
+    time(&first_time);
+
+    localtime_r(&first_time, &timeinfo);
+    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+    ESP_LOGI(TAG, "The very first date/time is: %s", strftime_buf);
+    esp_mqtt_client_publish(client, "/topic/time", strftime_buf, 0, 1, 0);
+  }
+
+  localtime_r(&now, &timeinfo);
+  strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+  ESP_LOGI(TAG, "The current date/time in New York is: %s", strftime_buf);
+  esp_mqtt_client_publish(client, "/topic/time", strftime_buf, 0, 1, 0);
+
+  print_elapsed_time(now, first_time, timeinfo);
+}
+
 void vTaskPublishTime(void *pvParameters) {
   TickType_t xLastWakeTime;
-  /* Block for 500ms. */
-  const TickType_t xDelay = 60000 / portTICK_PERIOD_MS;
+  /* Block for 15 minutes. */
+  const TickType_t xDelay = 15 * 60 * 1000 / portTICK_PERIOD_MS;
 
   // Initialise the xLastWakeTime variable with the current time.
   xLastWakeTime = xTaskGetTickCount();
 
-  time_t first_time = 0;
-  time_t now;
-  struct tm timeinfo;
+  EventBits_t bits = xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+  if ((bits & CONNECTED_BIT) == 0) {
+    ESP_LOGE(TAG, "Wi-Fi is not connected, failed to publish time");
+  } else {
+    sync_time_via_sntp();
+  }
 
   while (1) {
     // Wait for the next cycle.
     vTaskDelayUntil(&xLastWakeTime, xDelay);
 
-    time(&now);
-    localtime_r(&now, &timeinfo);
-    // Is time set? If not, tm_year will be (1970 - 1900).
-    if (timeinfo.tm_year < (2016 - 1900)) {
-      ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
-      obtain_time();
-      // update 'now' variable with current time
-      time(&now);
+    EventBits_t bits = xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+    if ((bits & CONNECTED_BIT) == 0) {
+      ESP_LOGE(TAG, "Wi-Fi is not connected, failed to publish time");
+      continue;
     }
 
-    char strftime_buf[64];
-    // Set timezone to Eastern Standard Time and print local time
-    setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
-    tzset();
-
-    if (first_time == 0) {
-      ESP_LOGI(TAG, "This is the first point the time is known, saving it");
-      time(&first_time);
-
-      localtime_r(&first_time, &timeinfo);
-      strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-      ESP_LOGI(TAG, "The very first date/time is: %s", strftime_buf);
-      esp_mqtt_client_publish(client, "/topic/time", strftime_buf, 0, 1, 0);
-    }
-
-    localtime_r(&now, &timeinfo);
-    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-    ESP_LOGI(TAG, "The current date/time in New York is: %s", strftime_buf);
-    esp_mqtt_client_publish(client, "/topic/time", strftime_buf, 0, 1, 0);
-
-    print_elapsed_time(now, first_time, timeinfo);
+    sync_time_via_sntp();
   }
 }
 
-void app_main(void) {
+void boot(void) {
   ++boot_count;
   ESP_LOGI(TAG, "Boot count: %d", boot_count);
   ESP_LOGI(TAG, "[APP] Startup..");
@@ -464,11 +496,16 @@ void app_main(void) {
   esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
   esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
   esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
+}
+
+void app_main(void) {
+  boot();
 
   // Try to connect to Wi-Fi
   wifi_power_save();
 
   xTaskCreate(vTaskPublishTime, "PUBLISH_TIME", 3072, NULL, 1, NULL);
+
   print_mux = xSemaphoreCreateMutex();
   ESP_ERROR_CHECK(i2c_master_init());
   xTaskCreate(read_all_sensors, "i2c_test_task_0", 1024 * 2, (void *)0, 10, NULL);

@@ -17,6 +17,8 @@ void obtain_time(void) {
     ESP_LOGI(SNTP_TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
     vTaskDelay(2000 / portTICK_PERIOD_MS);
   }
+
+  // TODO: What do I do if above failed?
   time(&now);
   localtime_r(&now, &timeinfo);
 }
