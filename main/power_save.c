@@ -147,9 +147,6 @@ static esp_err_t read_temperature_sensor(int sensor_address, i2c_port_t i2c_num,
   return return_value;
 }
 
-/**
- * @brief i2c master initialization
- */
 static esp_err_t i2c_master_init() {
   int i2c_master_port = I2C_MASTER_NUM;
   i2c_config_t conf;
@@ -200,7 +197,8 @@ static float max_value(float values[]) {
 }
 
 static void read_all_sensors(void *arg) {
-  uint8_t sensor_data_h, sensor_data_l;
+  uint8_t sensor_data_h;
+  uint8_t sensor_data_l;
   int count = 0;
   float temp[4];
   char temperature_buffer[32];
@@ -229,26 +227,26 @@ static void read_all_sensors(void *arg) {
     if ((bits & CONNECTED_BIT) == 0) {
       ESP_LOGE(TAG, "Wi-Fi is not connected, not publishing temperatures");
     } else {
-      // sprintf(temperature_buffer, "%.2f", temp[0]);
-      // esp_mqtt_client_publish(client, "/temperature/0/", temperature_buffer, 0, 1, 0);
+      sprintf(temperature_buffer, "%.2f", temp[0]);
+      esp_mqtt_client_publish(client, "/temperature/0/", temperature_buffer, 0, 1, 0);
 
-      // sprintf(temperature_buffer, "%.2f", temp[1]);
-      // esp_mqtt_client_publish(client, "/temperature/1/", temperature_buffer, 0, 1, 0);
+      sprintf(temperature_buffer, "%.2f", temp[1]);
+      esp_mqtt_client_publish(client, "/temperature/1/", temperature_buffer, 0, 1, 0);
 
-      // sprintf(temperature_buffer, "%.2f", temp[2]);
-      // esp_mqtt_client_publish(client, "/temperature/2/", temperature_buffer, 0, 1, 0);
+      sprintf(temperature_buffer, "%.2f", temp[2]);
+      esp_mqtt_client_publish(client, "/temperature/2/", temperature_buffer, 0, 1, 0);
 
-      // sprintf(temperature_buffer, "%.2f", temp[3]);
-      // esp_mqtt_client_publish(client, "/temperature/3/", temperature_buffer, 0, 1, 0);
+      sprintf(temperature_buffer, "%.2f", temp[3]);
+      esp_mqtt_client_publish(client, "/temperature/3/", temperature_buffer, 0, 1, 0);
 
-      // sprintf(temperature_buffer, "%.2f", min);
-      // esp_mqtt_client_publish(client, "/temperature/min/", temperature_buffer, 0, 1, 0);
+      sprintf(temperature_buffer, "%.2f", min);
+      esp_mqtt_client_publish(client, "/temperature/min/", temperature_buffer, 0, 1, 0);
 
-      // sprintf(temperature_buffer, "%.2f", max);
-      // esp_mqtt_client_publish(client, "/temperature/max/", temperature_buffer, 0, 1, 0);
+      sprintf(temperature_buffer, "%.2f", max);
+      esp_mqtt_client_publish(client, "/temperature/max/", temperature_buffer, 0, 1, 0);
 
-      // sprintf(temperature_buffer, "%.2f", variance);
-      // esp_mqtt_client_publish(client, "/temperature/variance/", temperature_buffer, 0, 1, 0);
+      sprintf(temperature_buffer, "%.2f", variance);
+      esp_mqtt_client_publish(client, "/temperature/variance/", temperature_buffer, 0, 1, 0);
     }
 
     memset(temp, 0, sizeof temp);
@@ -317,12 +315,12 @@ static void mqtt_app_start(void) {
   esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, client);
 
   EventBits_t bits = xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
-	if ((bits & CONNECTED_BIT) == 0) {
-		ESP_LOGE(TAG, "Wi-Fi is not connected, failed to initialize MQTT connection");
-	} else {
+  if ((bits & CONNECTED_BIT) == 0) {
+    ESP_LOGE(TAG, "Wi-Fi is not connected, failed to initialize MQTT connection");
+  } else {
     ESP_LOGI(TAG, "Starting MQTT client");
     esp_mqtt_client_start(client);
-	}
+  }
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
@@ -357,10 +355,10 @@ static void wifi_power_save(void) {
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    // Set up listeners for Wi-Fi events, this tries to re-connect after disconnection
+  // Set up listeners for Wi-Fi events, this tries to re-connect after disconnection
   ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
-  
+
   // Set up listener to launch when IP is obtained
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &on_got_ip_address, NULL));
 
@@ -432,12 +430,11 @@ void sync_time_via_sntp() {
 }
 
 void vTaskPublishTime(void *pvParameters) {
-  TickType_t xLastWakeTime;
   /* Block for 15 minutes. */
   const TickType_t xDelay = 15 * 60 * 1000 / portTICK_PERIOD_MS;
 
   // Initialise the xLastWakeTime variable with the current time.
-  xLastWakeTime = xTaskGetTickCount();
+  TickType_t xLastWakeTime = xTaskGetTickCount();
 
   EventBits_t bits = xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
   if ((bits & CONNECTED_BIT) == 0) {
